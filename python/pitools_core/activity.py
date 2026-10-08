@@ -11,15 +11,19 @@ import unicodedata
 from decimal import ROUND_HALF_UP, Decimal
 from pathlib import Path
 
-ACTIVITY_VERSION = '0.1.12'
+ACTIVITY_VERSION = '0.1.13'
 _DATA = Path(__file__).resolve().parent.parent.parent / 'data' / 'activity'
 PHRASES = json.loads((_DATA / 'phrases.json').read_text(encoding='utf-8'))
 FRAME_DATA = json.loads((_DATA / 'frames.json').read_text(encoding='utf-8'))
 # JSON object order equals JS Object.keys order only without integer-like keys.
 if any(re.fullmatch(r'(0|[1-9][0-9]*)', name) for name in FRAME_DATA['presets']):
   raise ValueError('frame preset names must not be integer-like')
-FRAME_NAMES = list(FRAME_DATA['presets'])
-DEFAULT_ACTIVITY = {'enabled': True, 'frames': 'moon8', 'lang': 'zh', 'narrate': True, 'contract': True, 'phrases': True}
+# Project-owned preset; original licensed data and legacy random slots stay intact.
+PI_PRESET = {'frames': ['π ·  ', 'π ·· ', 'π ···'], 'intervalMs': 240, 'restFrame': 'π    '}
+ACTIVITY_PRESETS = {**FRAME_DATA['presets'], 'pi': PI_PRESET}
+_RANDOM_FRAME_NAMES = list(FRAME_DATA['presets'])
+FRAME_NAMES = list(ACTIVITY_PRESETS)
+DEFAULT_ACTIVITY = {'enabled': True, 'frames': 'pi', 'lang': 'zh', 'narrate': True, 'contract': True, 'phrases': True}
 PHASES = ('idle', 'waiting', 'thinking', 'tool', 'done')
 
 # JS \s and String.prototype.trim whitespace; Python's \s/isspace differ (﻿, \x1c-\x1f).
@@ -183,7 +187,7 @@ def normalize_activity(value=None) -> dict:
     if isinstance(value.get(key), bool):
       out[key] = value[key]
   frames = value.get('frames')
-  if isinstance(frames, str) and (frames == 'random' or frames in FRAME_DATA['presets']):
+  if isinstance(frames, str) and (frames == 'random' or frames in ACTIVITY_PRESETS):
     out['frames'] = frames
   if value.get('lang') in ('zh', 'en', 'auto'):
     out['lang'] = value['lang']
@@ -210,7 +214,7 @@ class ActivityState:
   def __init__(self, config=None, locale: str = ''):
     self.locale = locale
     self.config = normalize_activity(config)
-    self.preset_name = 'moon8'
+    self.preset_name = 'pi'
     self._clear()
     self.configure(self.config)
 
@@ -235,7 +239,7 @@ class ActivityState:
 
   def configure(self, config):
     self.config = normalize_activity(config)
-    self.preset_name = FRAME_NAMES[mix_slot(self.started_at, 123) % len(FRAME_NAMES)] if self.config['frames'] == 'random' else self.config['frames']
+    self.preset_name = _RANDOM_FRAME_NAMES[mix_slot(self.started_at, 123) % len(_RANDOM_FRAME_NAMES)] if self.config['frames'] == 'random' else self.config['frames']
 
   def reset(self, config=None):
     self._clear()
@@ -384,7 +388,9 @@ class ActivityState:
     return pick(tier if tier is not None else [*PHRASES['thinking'][lang], *(PHRASES['thinkingNight'][lang] if night else [])], self.started_at, slot)
 
   def frame(self, now) -> str:
-    preset = FRAME_DATA['presets'][self.preset_name]
+    preset = ACTIVITY_PRESETS[self.preset_name]
+    if not self.live and self.preset_name == 'pi':
+      return PI_PRESET['restFrame']
     frames = preset['frames']
     return frames[_floor(max(0, now - self.started_at) / preset['intervalMs']) % len(frames)] if frames else ''
 
@@ -393,8 +399,9 @@ class ActivityState:
       return ''
     lang = self.lang
     if self.phase == 'idle':
-      frames = FRAME_DATA['presets'][self.preset_name]['frames']
-      return _js_trim(f"{frames[0] if frames else ''} ⏵ {'待机中 · 等待任务' if lang == 'zh' else 'Idle · ready for a task'}")
+      frames = ACTIVITY_PRESETS[self.preset_name]['frames']
+      frame = PI_PRESET['restFrame'] if self.preset_name == 'pi' else frames[0] if frames else ''
+      return _js_trim(f"{frame} ⏵ {'待机中 · 等待任务' if lang == 'zh' else 'Idle · ready for a task'}")
     if self.phase == 'done':
       narration = self.last_narration + ' · ' if self.config['narrate'] and self.last_narration else ''
       return _js_trim(f"{self.frame(self.started_at if self.end_at is None else self.end_at)} ⏵ {narration}{self.done_text}")
@@ -415,7 +422,7 @@ class ActivityState:
   def next_wake_at(self, now):
     if not self.config['enabled'] or not self.live:
       return None
-    preset = FRAME_DATA['presets'][self.preset_name]
+    preset = ACTIVITY_PRESETS[self.preset_name]
 
     def following(anchor, interval):
       return anchor + (_floor(max(0, now - anchor) / interval) + 1) * interval
@@ -457,4 +464,4 @@ class ActivityState:
     self.output_tokens = data.get('outputTokens', 0)
     self.seen_messages = set(data.get('seenMessageKeys') or [])
     preset = data.get('presetName')
-    self.preset_name = preset if preset in FRAME_DATA['presets'] else 'moon8'
+    self.preset_name = preset if preset in ACTIVITY_PRESETS else 'pi'
