@@ -1,0 +1,28 @@
+{
+  "name": "pitools-python",
+  "version": "0.1.12",
+  "private": true,
+  "type": "module",
+  "description": "Pi terminal trajectory inspector — PYTHON activity edition",
+  "license": "BSD-3-Clause",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/ZSY007/pitools-python.git"
+  },
+  "homepage": "https://github.com/ZSY007/pitools-python",
+  "keywords": [
+    "pi-package"
+  ],
+  "pi": {
+    "extensions": [
+      "./index.ts"
+    ]
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-coding-agent": "*",
+    "@earendil-works/pi-tui": "*"
+  },
+  "engines": {
+    "node": ">=22.19"
+  }
+}
